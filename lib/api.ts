@@ -2,6 +2,11 @@ export type ApiResponse<T> = {
   statusCode: number;
   success: boolean;
   message: string;
+  meta?: {
+    total: number;
+    page: number;
+    limit: number;
+  };
   data: T;
 };
 
@@ -83,6 +88,28 @@ export async function putJson<TResponse, TBody extends object>(
 
   if (!response.ok || !result?.success) {
     throw new Error(result?.message || "Unable to update data. Please try again.");
+  }
+
+  return result;
+}
+
+export async function putFormData<TResponse>(
+  path: string,
+  body: FormData,
+  accessToken?: string,
+): Promise<ApiResponse<TResponse>> {
+  const response = await fetch(getApiUrl(path), {
+    method: "PUT",
+    headers: accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : undefined,
+    body,
+  });
+
+  const result = (await response.json().catch(() => null)) as ApiResponse<TResponse> | null;
+
+  if (!response.ok || !result?.success) {
+    throw new Error(result?.message || "Unable to upload image. Please try again.");
   }
 
   return result;

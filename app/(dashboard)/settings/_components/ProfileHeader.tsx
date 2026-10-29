@@ -5,7 +5,7 @@ import { Camera, Loader2 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { getJson, putJson } from "@/lib/api";
+import { getJson, putFormData } from "@/lib/api";
 
 type Profile = {
   id: string;
@@ -14,15 +14,6 @@ type Profile = {
   role: string;
   profileImage: string | null;
 };
-
-function readFileAsDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(new Error("Unable to read the selected image"));
-    reader.readAsDataURL(file);
-  });
-}
 
 export function ProfileHeader() {
   const queryClient = useQueryClient();
@@ -47,10 +38,12 @@ export function ProfileHeader() {
       if (!file.type.startsWith("image/")) throw new Error("Please select a valid image file");
       if (file.size > 5 * 1024 * 1024) throw new Error("Image must be smaller than 5 MB");
 
-      const profileImage = await readFileAsDataUrl(file);
-      return putJson<Profile, { profileImage: string }>(
+      const formData = new FormData();
+      formData.append("profileImage", file);
+
+      return putFormData<Profile>(
         `/api/v1/user/${profile.id}`,
-        { profileImage },
+        formData,
         accessToken,
       );
     },
