@@ -1,9 +1,9 @@
-import React from 'react'
+import { CompanionsList } from "./_components/CompanionsList";
 
-const page = () => {
+export default function CompanionsPage() {
   return (
-    <div>page</div>
-  )
+    <main>
+      <CompanionsList />
+    </main>
+  );
 }
-
-export default page
