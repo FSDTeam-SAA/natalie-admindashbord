@@ -12,6 +12,7 @@ import {
   User,
   X,
   Box,
+  Coins,
 } from "lucide-react";
 import { useState } from "react";
 import Image from "next/image";
@@ -31,6 +32,7 @@ const navigation = [
   { name: "Users", href: "/users", icon: Box },
    { name: "Companions", href: "/companions", icon: ImageDown },
   { name: "Subscriptions", href: "/subscriptions", icon: User  },
+  { name: "Credits", href: "/credits", icon: Coins },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 

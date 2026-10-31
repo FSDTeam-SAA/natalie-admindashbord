@@ -70,6 +70,30 @@ export async function postJson<TResponse, TBody extends object>(
   return result;
 }
 
+export async function postFormData<TResponse>(
+  path: string,
+  body: FormData,
+  accessToken?: string,
+): Promise<ApiResponse<TResponse>> {
+  const response = await fetch(getApiUrl(path), {
+    method: "POST",
+    headers: accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : undefined,
+    body,
+  });
+
+  const result = (await response.json().catch(() => null)) as ApiResponse<TResponse> | null;
+
+  if (!response.ok || !result?.success) {
+    throw new Error(
+      result?.message || "Unable to upload images. Please try again.",
+    );
+  }
+
+  return result;
+}
+
 export async function putJson<TResponse, TBody extends object>(
   path: string,
   body: TBody,
@@ -84,12 +108,35 @@ export async function putJson<TResponse, TBody extends object>(
     body: JSON.stringify(body),
   });
 
-  const result = (await response.json().catch(() => null)) as ApiResponse<TResponse> | null;
+  const result = (await response
+    .json()
+    .catch(() => null)) as ApiResponse<TResponse> | null;
 
   if (!response.ok || !result?.success) {
     throw new Error(result?.message || "Unable to update data. Please try again.");
   }
 
+  return result;
+}
+
+export async function patchJson<TResponse, TBody extends object>(
+  path: string,
+  body: TBody,
+  accessToken?: string,
+): Promise<ApiResponse<TResponse>> {
+  const response = await fetch(getApiUrl(path), {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
+    },
+    body: JSON.stringify(body),
+  });
+
+  const result = (await response.json().catch(() => null)) as ApiResponse<TResponse> | null;
+  if (!response.ok || !result?.success) {
+    throw new Error(result?.message || "Unable to update data. Please try again.");
+  }
   return result;
 }
 
@@ -110,6 +157,26 @@ export async function putFormData<TResponse>(
 
   if (!response.ok || !result?.success) {
     throw new Error(result?.message || "Unable to upload image. Please try again.");
+  }
+
+  return result;
+}
+
+export async function deleteJson<TResponse>(
+  path: string,
+  accessToken?: string,
+): Promise<ApiResponse<TResponse>> {
+  const response = await fetch(getApiUrl(path), {
+    method: "DELETE",
+    headers: accessToken
+      ? { Authorization: `Bearer ${accessToken}` }
+      : undefined,
+  });
+
+  const result = (await response.json().catch(() => null)) as ApiResponse<TResponse> | null;
+
+  if (!response.ok || !result?.success) {
+    throw new Error(result?.message || "Unable to delete data. Please try again.");
   }
 
   return result;

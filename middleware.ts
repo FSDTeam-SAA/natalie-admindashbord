@@ -20,6 +20,7 @@ export const config = {
     "/users/:path*",
     "/companions/:path*",
     "/subscriptions/:path*",
+    "/credits/:path*",
     "/settings/:path*",
   ],
 };

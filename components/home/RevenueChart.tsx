@@ -1,95 +1,60 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
+import type { LucideIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
 type ChartRange = "week" | "month";
 
-type RevenuePoint = {
-  label: string;
-  tooltip: string;
-  value: number;
+const chartShapes: Record<ChartRange, number[]> = {
+  week: [68, 68, 38, 58, 30, 65, 43],
+  month: [58, 42, 66, 35, 52, 28, 46],
 };
 
-const chartData: Record<ChartRange, RevenuePoint[]> = {
-  week: [
-    { label: "Sun", tooltip: "Sunday", value: 16 },
-    { label: "Mon", tooltip: "Monday", value: 27 },
-    { label: "Tue", tooltip: "Tuesday", value: 38 },
-    { label: "Wed", tooltip: "Wednesday", value: 22 },
-    { label: "Thu", tooltip: "Thursday", value: 30 },
-    { label: "Fri", tooltip: "Friday", value: 35 },
-    { label: "Sat", tooltip: "Saturday", value: 27 },
-  ],
-  month: [
-    { label: "1", tooltip: "Week 1", value: 18 },
-    { label: "5", tooltip: "Week 2", value: 24 },
-    { label: "10", tooltip: "Week 3", value: 31 },
-    { label: "15", tooltip: "Week 4", value: 26 },
-    { label: "20", tooltip: "Week 5", value: 42 },
-    { label: "25", tooltip: "Week 6", value: 33 },
-    { label: "30", tooltip: "Week 7", value: 46 },
-  ],
-};
-
-const yAxis = [50, 40, 30, 20, 10, 0];
-const viewBoxWidth = 820;
-const viewBoxHeight = 220;
-const chartPadding = 8;
-const maxValue = 50;
-
-function getPointPosition(point: RevenuePoint, index: number, length: number) {
-  const usableWidth = viewBoxWidth - chartPadding * 2;
-  const x = chartPadding + (usableWidth / (length - 1)) * index;
-  const y = viewBoxHeight - (point.value / maxValue) * viewBoxHeight;
-
-  return { x, y };
-}
-
-function createLinePath(points: Array<{ x: number; y: number }>) {
-  return points
-    .map((point, index) => `${index === 0 ? "M" : "L"} ${point.x} ${point.y}`)
-    .join(" ");
-}
-
-function formatValue(value: number) {
-  return `${value}k`;
-}
-
-export function RevenueChart() {
+export function RevenueChart({ totalRevenue, icon: Icon }: { totalRevenue: number; icon: LucideIcon }) {
   const [range, setRange] = useState<ChartRange>("week");
-  const [activeIndex, setActiveIndex] = useState(2);
-
-  const data = chartData[range];
-
+  const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const formattedRevenue = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(totalRevenue);
+  const labels = range === "week"
+    ? ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
+    : ["1", "5", "10", "15", "20", "25", "30"];
   const points = useMemo(
-    () => data.map((point, index) => getPointPosition(point, index, data.length)),
-    [data],
+    () => chartShapes[range].map((y, index, items) => ({
+      x: (index / (items.length - 1)) * 100,
+      y,
+    })),
+    [range],
   );
+  const linePoints = points.map((point) => `${point.x},${point.y}`).join(" ");
+  const areaPoints = `0,100 ${linePoints} 100,100`;
+  const activePoint = activeIndex === null ? null : points[activeIndex];
 
-  const linePath = useMemo(() => createLinePath(points), [points]);
-  const fillPath = `${linePath} L ${points[points.length - 1].x} ${viewBoxHeight} L ${points[0].x} ${viewBoxHeight} Z`;
-  const activePoint = points[activeIndex];
-  const activeData = data[activeIndex];
-  const tooltipLeft = `${(activePoint.x / viewBoxWidth) * 100}%`;
-  const tooltipTop = `${(activePoint.y / viewBoxHeight) * 100}%`;
-
-  const handleRangeChange = (nextRange: ChartRange) => {
-    setRange(nextRange);
-    setActiveIndex(nextRange === "week" ? 2 : 4);
+  const handleChartMove = (event: MouseEvent<HTMLDivElement>) => {
+    const bounds = event.currentTarget.getBoundingClientRect();
+    const relativeX = Math.min(Math.max(event.clientX - bounds.left, 0), bounds.width);
+    const nextIndex = Math.round((relativeX / bounds.width) * (points.length - 1));
+    setActiveIndex(nextIndex);
   };
 
   return (
     <section className="h-[364px] rounded-md border border-[#2A2B31] bg-[#1A1B20] p-5">
-      <div className="mb-5 flex items-center justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <h2 className="text-lg font-semibold text-white">Revenue</h2>
         <div className="flex rounded-md bg-[#3A2028] p-1">
           {(["week", "month"] as const).map((item) => (
             <button
               key={item}
               type="button"
-              onClick={() => handleRangeChange(item)}
+              onClick={() => {
+                setRange(item);
+                setActiveIndex(null);
+              }}
               className={cn(
                 "h-8 rounded px-4 text-sm font-medium capitalize text-[#D6C9CE] transition-colors",
                 range === item && "bg-[#C83B55] font-semibold text-white",
@@ -101,100 +66,54 @@ export function RevenueChart() {
         </div>
       </div>
 
-      <div className="relative h-[289px]">
-        <div className="absolute bottom-8 left-0 top-2 flex w-10 flex-col justify-between text-xs text-white">
-          {yAxis.map((label) => (
-            <span key={label}>{label}k</span>
-          ))}
+      <div className="mt-4 flex items-center gap-3">
+        <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#351D2B]">
+          <Icon className="h-5 w-5 text-[#D33C58]" />
+        </span>
+        <div>
+          <p className="text-xs text-[#9A9AA2]">Total Revenue</p>
+          <p className="text-2xl font-semibold text-white">{formattedRevenue}</p>
         </div>
+      </div>
 
-        <div className="absolute bottom-8 left-12 right-0 top-2">
-          <svg
-            viewBox={`0 0 ${viewBoxWidth} ${viewBoxHeight}`}
-            preserveAspectRatio="none"
-            className="h-full w-full overflow-visible"
-            role="img"
-            aria-label={`${range} revenue chart`}
-          >
+      <div className="relative mt-5 h-[215px] overflow-hidden">
+        <div
+          className="absolute inset-x-9 bottom-7 top-3"
+          onMouseMove={handleChartMove}
+          onMouseLeave={() => setActiveIndex(null)}
+        >
+          {[0, 1, 2, 3, 4].map((line) => (
+            <div key={line} className="absolute inset-x-0 border-t border-[#2A2B31]/70" style={{ top: `${line * 25}%` }} />
+          ))}
+          <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="pointer-events-none absolute inset-0 h-full w-full" role="img" aria-label={`${range} revenue overview`}>
             <defs>
-              <linearGradient id="revenueFill" x1="0" x2="0" y1="0" y2="1">
-                <stop offset="0%" stopColor="#C83B55" stopOpacity="0.55" />
+              <linearGradient id={`revenue-fill-${range}`} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0%" stopColor="#C83B55" stopOpacity="0.38" />
                 <stop offset="100%" stopColor="#C83B55" stopOpacity="0.05" />
               </linearGradient>
             </defs>
-
-            {yAxis.map((value) => {
-              const y = viewBoxHeight - (value / maxValue) * viewBoxHeight;
-
-              return (
-                <line
-                  key={value}
-                  x1="0"
-                  x2={viewBoxWidth}
-                  y1={y}
-                  y2={y}
-                  stroke="#2A2B31"
-                  strokeOpacity="0.45"
-                  strokeWidth="1"
-                />
-              );
-            })}
-
-            <path
-              d={fillPath}
-              fill="url(#revenueFill)"
-            />
-            <path
-              d={linePath}
-              fill="none"
-              stroke="#D33C58"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth="3"
-            />
-            <line
-              x1={activePoint.x}
-              x2={activePoint.x}
-              y1={activePoint.y}
-              y2={viewBoxHeight}
-              stroke="#D33C58"
-              strokeDasharray="5 5"
-              strokeWidth="2"
-            />
-            {points.map((point, index) => (
-              <circle
-                key={`${data[index].label}-${data[index].value}`}
-                cx={point.x}
-                cy={point.y}
-                r={index === activeIndex ? 5 : 8}
-                className="cursor-pointer"
-                fill={index === activeIndex ? "#FFFFFF" : "transparent"}
-                stroke={index === activeIndex ? "#D33C58" : "transparent"}
-                strokeWidth="2"
-                onMouseEnter={() => setActiveIndex(index)}
-                onClick={() => setActiveIndex(index)}
-              />
-            ))}
+            <polygon points={areaPoints} fill={`url(#revenue-fill-${range})`} />
+            <polyline points={linePoints} fill="none" stroke="#D33C58" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-
-          <div
-            className="absolute -translate-x-1/2 -translate-y-[calc(100%+10px)] rounded-md bg-[#C83B55] px-5 py-3 text-center text-xs font-medium leading-tight text-white"
-            style={{ left: tooltipLeft, top: tooltipTop }}
-          >
-            {activeData.tooltip}
-            <br />
-            {formatValue(activeData.value)}
-            <span className="absolute -bottom-1 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 bg-[#C83B55]" />
-          </div>
+          {activePoint && activeIndex !== null && (
+            <>
+              <div className="pointer-events-none absolute bottom-0 border-l-2 border-dashed border-[#D33C58]" style={{ left: `${activePoint.x}%`, top: `${activePoint.y}%` }} />
+              <div className="pointer-events-none absolute h-3 w-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-[#D33C58] bg-white" style={{ left: `${activePoint.x}%`, top: `${activePoint.y}%` }} />
+              <div
+                className={cn(
+                  "pointer-events-none absolute -translate-y-[calc(100%+12px)] rounded-md bg-[#C83B55] px-4 py-2 text-center text-xs font-medium text-white",
+                  activeIndex === 0 ? "translate-x-0" : activeIndex === points.length - 1 ? "-translate-x-full" : "-translate-x-1/2",
+                )}
+                style={{ left: `${activePoint.x}%`, top: `${activePoint.y}%` }}
+              >
+                {labels[activeIndex]}<br />{formattedRevenue}
+                <span className="absolute -bottom-1 left-1/2 h-3 w-3 -translate-x-1/2 rotate-45 bg-[#C83B55]" />
+              </div>
+            </>
+          )}
         </div>
-
-        <div
-          className="absolute bottom-0 left-12 right-0 grid text-xs text-[#DCDCE1]"
-          style={{ gridTemplateColumns: `repeat(${data.length}, minmax(0, 1fr))` }}
-        >
-          {data.map((point) => (
-            <span key={point.label}>{point.label}</span>
-          ))}
+        <div className="absolute inset-x-9 bottom-0 grid grid-cols-7 text-xs text-[#DCDCE1]">
+          {labels.map((label) => <span key={label}>{label}</span>)}
         </div>
       </div>
     </section>

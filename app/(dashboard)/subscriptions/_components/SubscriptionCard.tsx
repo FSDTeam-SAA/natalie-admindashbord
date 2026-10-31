@@ -1,7 +1,18 @@
 import Image from "next/image";
 import { Check } from "lucide-react";
+import { DeletePlanButton } from "./DeletePlanButton";
+import { EditPlanModal } from "./EditPlanModal";
 
 export type SubscriptionPlan = {
+  id: string;
+  rawName: string;
+  rawPrice: string;
+  messageLimit: number;
+  creditAllowance: number;
+  durationDays: number;
+  isPopular: boolean;
+  isActive: boolean;
+  entitlementPolicy: { kind: "free" | "paid"; dailyPhoto: boolean; dailyText: boolean };
   eyebrow: string;
   name: string;
   price: string;
@@ -21,12 +32,13 @@ export function SubscriptionCard({ plan }: SubscriptionCardProps) {
 
   return (
     <article
-      className={`relative flex min-h-[650px] flex-col overflow-visible rounded-lg border bg-[#19191f] text-white transition-transform duration-300 hover:-translate-y-2 ${
+      className={`group relative flex min-h-[650px] flex-col overflow-visible rounded-lg border bg-[#19191f] text-white transition-transform duration-300 hover:-translate-y-2 ${
         isPremium
           ? "border-[#C2384F] shadow-[0_0_0_1px_rgba(194,56,79,0.85)]"
           : "border-white/10"
       }`}
     >
+      <DeletePlanButton planId={plan.id} planName={plan.name} />
       {isPremium && (
         <div
           className="absolute inset-0 rounded-lg"
@@ -84,16 +96,7 @@ export function SubscriptionCard({ plan }: SubscriptionCardProps) {
           ))}
         </ul>
 
-        <button
-          type="button"
-          className={`mt-auto inline-flex h-12 w-full items-center justify-center rounded-[3px] border border-[#C2384F] px-5 text-base font-medium text-white transition-colors ${
-            plan.variant === "free"
-              ? "hover:bg-[#C2384F]"
-              : "bg-[#C2384F] hover:bg-[#df4567]"
-          }`}
-        >
-          Edit Plan
-        </button>
+        <EditPlanModal plan={plan} />
       </div>
     </article>
   );
