@@ -10,6 +10,7 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, Dia
 import { deleteJson, getJson, postFormData, postJson, putFormData, putJson, type ApiResponse } from "@/lib/api";
 
 type TelegramProfile = {
+  enabled?: boolean;
   displayName?: string;
   about?: string;
   description?: string;
@@ -66,6 +67,9 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Please try again.";
 }
 
+const PROFILE_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const MAX_PROFILE_IMAGE_BYTES = 10 * 1024 * 1024;
+
 export function PublishingManagerModal({ companionId, companionName }: { companionId: string; companionName: string }) {
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState<"profile" | "stories">("profile");
@@ -97,7 +101,12 @@ export function PublishingManagerModal({ companionId, companionName }: { compani
 
 function ProfileTab({ base, companionId, token, companionName }: { base: string; companionId: string; token?: string; companionName: string }) {
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ["telegram-profile", companionId], queryFn: () => getJson<TelegramProfile>(`${base}/telegram-profile`, token), enabled: Boolean(token) });
+  const query = useQuery({
+    queryKey: ["telegram-profile", companionId],
+    queryFn: () => getJson<TelegramProfile>(`${base}/telegram-profile`, token),
+    enabled: Boolean(token),
+    refetchInterval: 15_000,
+  });
   const profile = query.data?.data;
   const [displayName, setDisplayName] = useState(companionName);
   const [about, setAbout] = useState("");
@@ -127,6 +136,8 @@ function ProfileTab({ base, companionId, token, companionName }: { base: string;
       setPhotoPreview(response.data.profileImage || "");
       if (response.data.telegramSync?.lastError) {
         toast.warning("Website photo updated, but Telegram sync needs attention", { description: response.data.telegramSync.lastError });
+      } else if (!response.data.telegramSync) {
+        toast.success("Website profile photo updated");
       } else {
         toast.success("Profile photo updated and queued for Telegram sync");
       }
@@ -139,12 +150,29 @@ function ProfileTab({ base, companionId, token, companionName }: { base: string;
     onError: (error) => toast.error("Unable to update profile photo", { description: errorMessage(error) }),
   });
   const retry = useMutation({ mutationFn: () => postJson<TelegramProfile, Record<string, never>>(`${base}/telegram-profile/retry`, {}, token), onSuccess: async (response) => { toast.success(response.message || "Publishing retry started"); await queryClient.invalidateQueries({ queryKey: ["telegram-profile", companionId] }); }, onError: (error) => toast.error("Unable to retry publishing", { description: errorMessage(error) }) });
+  const selectPhoto = (file?: File) => {
+    if (!file) {
+      setPhotoFile(null);
+      return;
+    }
+    if (!PROFILE_IMAGE_TYPES.has(file.type)) {
+      toast.error("Please select a JPEG, PNG or WebP image");
+      return;
+    }
+    if (file.size > MAX_PROFILE_IMAGE_BYTES) {
+      toast.error("Profile image must be 10 MB or smaller");
+      return;
+    }
+    setPhotoFile(file);
+  };
   if (query.isPending) return <Loading />;
   if (query.isError) return <ErrorState error={query.error} retry={() => query.refetch()} />;
   const status = profile?.publishingStatus || profile?.status || "Ready";
   const failure = profile?.lastError || profile?.error;
+  const pending = status === "pending" || status === "processing";
+  const statusLabel = status.replaceAll("_", " ");
   return <section>
-    <div className="mb-6 flex flex-col gap-4 rounded-xl border border-[#303139] bg-[#16171B] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className={`flex size-10 items-center justify-center rounded-xl ${failure ? "bg-red-500/12 text-red-300" : "bg-emerald-500/12 text-emerald-300"}`}>{failure ? <AlertCircle className="size-5" /> : <CheckCircle2 className="size-5" />}</span><div><p className="text-xs uppercase tracking-wider text-[#7D7E87]">Publishing status</p><p className="mt-1 font-semibold capitalize text-white">{status}</p></div></div><button type="button" onClick={() => retry.mutate()} disabled={retry.isPending} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-sky-500/30 px-4 text-sm font-semibold text-sky-300 hover:bg-sky-500 hover:text-white disabled:opacity-50">{retry.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Retry publishing</button></div>
+    <div className="mb-6 flex flex-col gap-4 rounded-xl border border-[#303139] bg-[#16171B] p-4 sm:flex-row sm:items-center sm:justify-between"><div className="flex items-center gap-3"><span className={`flex size-10 items-center justify-center rounded-xl ${failure ? "bg-red-500/12 text-red-300" : pending ? "bg-amber-500/12 text-amber-300" : "bg-emerald-500/12 text-emerald-300"}`}>{failure ? <AlertCircle className="size-5" /> : pending ? <Clock3 className="size-5" /> : <CheckCircle2 className="size-5" />}</span><div><p className="text-xs uppercase tracking-wider text-[#7D7E87]">Publishing status</p><p className="mt-1 font-semibold capitalize text-white">{statusLabel}</p>{profile?.enabled === false && <p className="mt-1 text-xs text-amber-300">Telegram profile sync is disabled on the server.</p>}</div></div><button type="button" onClick={() => retry.mutate()} disabled={retry.isPending || profile?.enabled === false || status === "not_configured"} className="flex h-10 items-center justify-center gap-2 rounded-lg border border-sky-500/30 px-4 text-sm font-semibold text-sky-300 hover:bg-sky-500 hover:text-white disabled:opacity-50">{retry.isPending ? <Loader2 className="size-4 animate-spin" /> : <RefreshCw className="size-4" />} Retry publishing</button></div>
     {failure && <p className="mb-5 rounded-lg border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-300">{failure}</p>}
     <div className="mb-6 rounded-xl border border-[#303139] bg-[#16171B] p-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
@@ -153,11 +181,11 @@ function ProfileTab({ base, companionId, token, companionName }: { base: string;
         </div>
         <div className="min-w-0 flex-1">
           <h3 className="font-semibold text-white">Telegram profile photo</h3>
-          <p className="mt-1 text-xs leading-5 text-[#858690]">JPEG, PNG or WebP. The website image is saved first, then Telegram sync runs in the background.</p>
+          <p className="mt-1 text-xs leading-5 text-[#858690]">JPEG, PNG or WebP, up to 10 MB. The website image is saved first, then Telegram sync runs in the background.</p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <label className="flex h-10 cursor-pointer items-center justify-center gap-2 rounded-lg border border-sky-500/35 px-4 text-sm font-semibold text-sky-300 transition hover:bg-sky-500 hover:text-white">
               <ImagePlus className="size-4" /> {photoFile ? "Change image" : "Select image"}
-              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => setPhotoFile(event.target.files?.[0] ?? null)} />
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => selectPhoto(event.target.files?.[0])} />
             </label>
             <button type="button" onClick={() => photo.mutate()} disabled={!photoFile || photo.isPending} className="flex h-10 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-500 disabled:cursor-not-allowed disabled:opacity-50">
               {photo.isPending ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />} {photo.isPending ? "Uploading..." : "Update photo"}

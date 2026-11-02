@@ -11,6 +11,10 @@ import AuthSessionProvider from "@/components/providers/AuthSessionProvider";
 export const metadata: Metadata = {
   title: "Elysia Admin Dashboard",
   description: "Elysia Admin Dashboard by Elysia ",
+  icons: {
+    icon: [{ url: "/heart-favicon.svg", type: "image/svg+xml" }],
+    shortcut: "/heart-favicon.svg",
+  },
 };
 
 export default function RootLayout({
@@ -36,4 +40,4 @@ export default function RootLayout({
     </html>
   );
 }
-// 
+//
