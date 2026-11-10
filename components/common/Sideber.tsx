@@ -33,6 +33,7 @@ const navigation = [
    { name: "Companions", href: "/companions", icon: ImageDown },
   { name: "Subscriptions", href: "/subscriptions", icon: User  },
   { name: "Credits", href: "/credits", icon: Coins },
+  { name: "Gifts & Costs", href: "/gifts", icon: Box },
   { name: "Settings", href: "/settings", icon: Settings },
 ];
 
@@ -77,10 +78,10 @@ export function Sidebar() {
       <div
         className={cn(
           "flex h-screen sticky bottom-0 top-0 flex-col bg-[#141417] z-50 transition-transform duration-300 overflow-auto",
-          // Mobile এ
+          // On mobile
           "fixed lg:static",
           "w-[260px] lg:w-[300px]",
-          // Mobile এ hide/show control
+          // Control visibility on mobile
           isMobileMenuOpen
             ? "translate-x-0"
             : "-translate-x-full lg:translate-x-0",
