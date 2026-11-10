@@ -3,16 +3,16 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CalendarDays, Check, Clock3, ImagePlus, Images, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
+import { CalendarDays, Check, Clock3, Images, Loader2, Plus, Sparkles, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { getJson, patchJson, postFormData, postJson, putJson } from "@/lib/api";
+import { deleteJson, getJson, patchJson, postFormData, postJson, putJson } from "@/lib/api";
 
 type Tab = "routine" | "photos" | "daily" | "context" | "deliveries";
 type RoutineSlot = { day: number; start: string; end: string; activity: string; location?: string };
 type Routine = { timezone: string; weekly: RoutineSlot[] };
-type LibraryPhoto = { id: string; url?: string; imageUrl?: string; secureUrl?: string; caption?: string; tags?: string[] | string; approved?: boolean; createdAt?: string };
+type LibraryPhoto = { id: string; publicId?: string; url?: string; imageUrl?: string; secureUrl?: string; caption?: string; tags?: string[] | string; approved?: boolean; createdAt?: string };
 type DailyContent = { id: string; day: string; publishAt: string; expiresAt: string; photoId: string; text: string; activity?: unknown; published?: unknown };
 type UnknownRecord = Record<string, unknown>;
 
@@ -101,19 +101,81 @@ function RoutineTab({ base, token, companionId }: { base: string; token?: string
 
 function PhotosTab({ base, token, companionId }: { base: string; token?: string; companionId: string }) {
   const queryClient = useQueryClient();
-  const query = useQuery({ queryKey: ["lifestyle-photos", companionId], queryFn: () => getJson<unknown>(`${base}/photos?page=1`, token), enabled: Boolean(token) });
+  const [page, setPage] = useState(1);
+  const queryKey = ["lifestyle-photos", companionId];
+  const query = useQuery({ queryKey: [...queryKey, page], queryFn: () => getJson<unknown>(`${base}/photos?page=${page}`, token), enabled: Boolean(token) });
   const photos = useMemo(() => asList<LibraryPhoto>(query.data?.data), [query.data]);
-  const upload = useMutation({ mutationFn: (formData: FormData) => postFormData<LibraryPhoto>(`${base}/photos`, formData, token), onSuccess: async (response) => { toast.success(response.message || "Photo uploaded successfully"); await queryClient.invalidateQueries({ queryKey: ["lifestyle-photos", companionId] }); }, onError: (error) => toast.error("Unable to upload photo", { description: message(error) }) });
-  const approve = useMutation({ mutationFn: ({ id, approved }: { id: string; approved: boolean }) => patchJson<LibraryPhoto, { approved: boolean }>(`${base}/photos/${id}`, { approved }, token), onSuccess: async (response) => { toast.success(response.message || "Photo status updated"); await queryClient.invalidateQueries({ queryKey: ["lifestyle-photos", companionId] }); }, onError: (error) => toast.error("Unable to update photo", { description: message(error) }) });
-  const handleUpload = (event: FormEvent<HTMLFormElement>) => { event.preventDefault(); const form = new FormData(event.currentTarget); const file = form.get("image"); if (!(file instanceof File) || !file.size) return toast.error("Please select an image"); upload.mutate(form); };
-  return <section><SectionHeader title="Photo library" description="Upload tagged images and control which photos are approved for delivery." />
-    <form onSubmit={handleUpload} className="mb-6 grid gap-3 rounded-xl border border-[#353640] bg-[#17181C] p-4 md:grid-cols-[1.2fr_1fr_1fr_auto]">
-      <label className={`${fieldClass} flex cursor-pointer items-center gap-2 text-[#A9AAB2]`}><ImagePlus className="size-4" /><span className="truncate">Choose image</span><input name="image" type="file" accept="image/*" required className="sr-only" /></label>
-      <input name="caption" className={fieldClass} placeholder="Caption (optional)" /><input name="tags" className={fieldClass} placeholder="Tags: gym,morning" />
-      <button disabled={upload.isPending} className="flex h-11 items-center justify-center gap-2 rounded-lg bg-[#C83B55] px-5 text-sm font-semibold text-white transition hover:bg-[#DF4965] disabled:opacity-50">{upload.isPending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Upload</button>
+  const refresh = () => queryClient.invalidateQueries({ queryKey });
+  const upload = useMutation({
+    mutationFn: (formData: FormData) => postFormData<LibraryPhoto>(`${base}/photos`, formData, token),
+    onSuccess: async () => { toast.success("Photo uploaded. Add tags and approve it for chat delivery."); setPage(1); await refresh(); },
+    onError: (error) => toast.error("Unable to upload photo", { description: message(error) }),
+  });
+  const importGallery = useMutation({
+    mutationFn: () => postJson<{ imported: number }, object>(`${base}/photos/import-gallery`, {}, token),
+    onSuccess: async (response) => { toast.success(`${response.data?.imported ?? 0} gallery photos added for review`); setPage(1); await refresh(); },
+    onError: (error) => toast.error("Unable to import gallery", { description: message(error) }),
+  });
+  const handleUpload = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const file = form.get("image");
+    if (!(file instanceof File) || !file.size) return toast.error("Please select an image");
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 10 * 1024 * 1024)
+      return toast.error("Choose a JPEG, PNG or WebP image up to 10 MB");
+    upload.mutate(form);
+  };
+  return <section>
+    <SectionHeader title="Photo library" description="Only approved photos are sent in chat. Tags describe every detail users can request, e.g. gym,morning,red. New gallery uploads also appear here as pending." action={<button type="button" disabled={importGallery.isPending} onClick={() => importGallery.mutate()} className="rounded-lg border border-[#3D3E46] px-3 py-2 text-sm disabled:opacity-50">{importGallery.isPending ? "Importing…" : "Import existing gallery"}</button>} />
+    <form onSubmit={handleUpload} className="mb-6 grid gap-3 rounded-xl border border-[#353640] bg-[#17181C] p-4 md:grid-cols-2">
+      <label className="text-sm text-[#A9AAB2]">JPEG, PNG or WebP · up to 10 MB<input name="image" type="file" accept="image/jpeg,image/png,image/webp" required className="mt-2 block w-full text-sm" /></label>
+      <label className="text-sm text-[#A9AAB2]">Caption<input name="caption" maxLength={1000} className={`${fieldClass} mt-2`} placeholder="Caption (optional)" /></label>
+      <label className="text-sm text-[#A9AAB2]">Tags<input name="tags" maxLength={500} className={`${fieldClass} mt-2`} placeholder="gym,morning,red" /></label>
+      <button disabled={upload.isPending} className="flex h-11 items-center justify-center gap-2 self-end rounded-lg bg-[#C83B55] px-5 text-sm font-semibold text-white disabled:opacity-50">{upload.isPending ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />} Upload for review</button>
     </form>
-    {query.isPending ? <Loading /> : query.isError ? <ErrorState error={query.error} retry={() => query.refetch()} /> : photos.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{photos.map((photo) => { const url = photo.url || photo.imageUrl || photo.secureUrl; return <article key={photo.id} className="overflow-hidden rounded-xl border border-[#303139] bg-[#17181C]"><div className="h-44 bg-[#111216] bg-contain bg-center bg-no-repeat" style={url ? { backgroundImage: `url(${JSON.stringify(url)})` } : undefined}>{!url && <Images className="mx-auto h-full size-8 text-[#555660]" />}</div><div className="p-4"><div className="flex items-start justify-between gap-2"><p className="line-clamp-2 text-sm font-medium text-white">{photo.caption || "Untitled photo"}</p><span className={`rounded-full px-2 py-1 text-[10px] ${photo.approved ? "bg-emerald-500/15 text-emerald-300" : "bg-amber-500/15 text-amber-300"}`}>{photo.approved ? "Approved" : "Pending"}</span></div><p className="mt-2 line-clamp-1 text-xs text-[#7F8089]">{Array.isArray(photo.tags) ? photo.tags.join(", ") : photo.tags || "No tags"}</p><button type="button" disabled={approve.isPending} onClick={() => approve.mutate({ id: photo.id, approved: !photo.approved })} className="mt-4 flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[#3D3E46] text-xs font-semibold hover:border-[#C83B55]"><Check className="size-3.5" />{photo.approved ? "Mark pending" : "Approve photo"}</button></div></article>; })}</div> : <Empty text="No library photos found." />}
+    {query.isPending ? <Loading /> : query.isError ? <ErrorState error={query.error} retry={() => query.refetch()} /> : photos.length ? <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{photos.map((photo) => <LibraryPhotoCard key={photo.id} photo={photo} base={base} token={token} refresh={refresh} />)}</div> : <Empty text="No library photos on this page." />}
+    <div className="mt-5 flex items-center justify-between gap-3 text-sm">
+      <button type="button" disabled={page === 1 || query.isFetching} onClick={() => setPage((value) => value - 1)} className="rounded-lg border border-[#3D3E46] px-4 py-2 disabled:opacity-40">Previous</button>
+      <span>Page {page}</span>
+      <button type="button" disabled={photos.length < 50 || query.isFetching} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-[#3D3E46] px-4 py-2 disabled:opacity-40">Next</button>
+    </div>
   </section>;
+}
+
+function LibraryPhotoCard({ photo, base, token, refresh }: { photo: LibraryPhoto; base: string; token?: string; refresh: () => Promise<unknown> }) {
+  const [caption, setCaption] = useState(photo.caption || "");
+  const tagsText = Array.isArray(photo.tags) ? photo.tags.join(", ") : photo.tags || "";
+  const [tags, setTags] = useState(tagsText);
+  useEffect(() => { setCaption(photo.caption || ""); setTags(tagsText); }, [photo.caption, tagsText]);
+  const update = useMutation({
+    mutationFn: () => putJson(`${base}/photos/${photo.id}`, { caption, tags }, token),
+    onSuccess: async () => { toast.success("Photo details saved"); await refresh(); },
+    onError: (error) => toast.error("Unable to save details", { description: message(error) }),
+  });
+  const approve = useMutation({
+    mutationFn: () => patchJson(`${base}/photos/${photo.id}`, { approved: !photo.approved }, token),
+    onSuccess: async () => { toast.success("Photo status updated"); await refresh(); },
+    onError: (error) => toast.error("Unable to update photo", { description: message(error) }),
+  });
+  const remove = useMutation({
+    mutationFn: () => deleteJson(`${base}/photos/${photo.id}`, token),
+    onSuccess: async () => { toast.success("Photo removed from library"); await refresh(); },
+    onError: (error) => toast.error("Unable to remove photo", { description: message(error) }),
+  });
+  const url = photo.url || photo.imageUrl || photo.secureUrl;
+  const busy = update.isPending || approve.isPending || remove.isPending;
+  const dirty = caption !== (photo.caption || "") || tags !== tagsText;
+  return <article className="overflow-hidden rounded-xl border border-[#303139] bg-[#17181C]">
+    <div role="img" aria-label={photo.caption || "Companion library photo"} className="h-52 bg-[#111216] bg-contain bg-center bg-no-repeat" style={url ? { backgroundImage: `url(${JSON.stringify(url)})` } : undefined}>{!url && <Images className="mx-auto h-full size-8 text-[#555660]" />}</div>
+    <div className="space-y-3 p-4">
+      <div className="flex items-center justify-between text-xs"><span className="text-[#A9AAB2]">{photo.publicId?.startsWith('generated:') ? "AI generated · review before approval" : "Companion photo"}</span><span className={photo.approved ? "text-emerald-300" : "text-amber-300"}>{photo.approved ? "Approved" : "Pending"}</span></div>
+      <label className="block text-xs text-[#A9AAB2]">Caption<input value={caption} onChange={(event) => setCaption(event.target.value)} maxLength={1000} className={`${fieldClass} mt-1`} /></label>
+      <label className="block text-xs text-[#A9AAB2]">Tags<input value={tags} onChange={(event) => setTags(event.target.value)} maxLength={500} className={`${fieldClass} mt-1`} placeholder="gym,morning" /></label>
+      <button type="button" disabled={busy || !dirty} onClick={() => update.mutate()} className="h-9 w-full rounded-lg border border-[#3D3E46] text-xs disabled:opacity-40">Save details</button>
+      <button type="button" disabled={busy || dirty} onClick={() => approve.mutate()} className="flex h-9 w-full items-center justify-center gap-2 rounded-lg border border-[#3D3E46] text-xs disabled:opacity-40"><Check className="size-3.5" />{photo.approved ? "Mark pending" : "Approve photo"}</button>
+      <button type="button" disabled={busy} onClick={() => remove.mutate()} className="h-9 w-full rounded-lg border border-red-500/30 text-xs text-red-300 disabled:opacity-40">Remove from library</button>
+    </div>
+  </article>;
 }
 
 function DailyTab({ base, token, companionId }: { base: string; token?: string; companionId: string }) {
